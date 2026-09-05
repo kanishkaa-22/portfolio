@@ -7,9 +7,9 @@ from flask import Flask, render_template, request, jsonify, session
 import sqlite3, json, os, hashlib
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'portfolio-secret-2024')
+app.secret_key = os.environ.get('SECRET_KEY', '')
 
-ADMIN_PASS = os.environ.get('ADMIN_PASS', 'kanishkaa@2024')
+ADMIN_PASS = os.environ.get('ADMIN_PASS', '')
 DB_PATH = os.path.join(os.path.dirname(__file__), 'database.db')
 
 # ── DB SETUP ────────────────────────────────
