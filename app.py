@@ -1,28 +1,30 @@
 # ═══════════════════════════════════════════
 #  app.py — Flask Backend for Portfolio
 #  Kanishkaa S. Portfolio
+#  (Postgres version — uses DATABASE_URL)
 # ═══════════════════════════════════════════
 
 from flask import Flask, render_template, request, jsonify, session
-import sqlite3, json, os, hashlib
+import psycopg2
+import psycopg2.extras
+import os
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'portfolio-secret-2024')
+app.secret_key = os.environ.get('SECRET_KEY', '')
 
-ADMIN_PASS = os.environ.get('ADMIN_PASS', 'kanishkaa@2024')
-DB_PATH = os.path.join(os.path.dirname(__file__), 'database.db')
+ADMIN_PASS = os.environ.get('ADMIN_PASS', '12345')
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
 
 # ── DB SETUP ────────────────────────────────
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
     return conn
 
 def init_db():
     conn = get_db()
     c = conn.cursor()
 
-    c.executescript('''
+    c.execute('''
         CREATE TABLE IF NOT EXISTS about (
             id INTEGER PRIMARY KEY,
             name TEXT, role TEXT, bio TEXT, tags TEXT,
@@ -34,8 +36,8 @@ def init_db():
         );
 
         CREATE TABLE IF NOT EXISTS projects (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cat TEXT, title TEXT, desc TEXT,
+            id SERIAL PRIMARY KEY,
+            cat TEXT, title TEXT, "desc" TEXT,
             chips TEXT, col TEXT,
             start_date TEXT, end_date TEXT,
             github TEXT, live TEXT,
@@ -44,44 +46,51 @@ def init_db():
         );
 
         CREATE TABLE IF NOT EXISTS experience (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             year INTEGER, start_date TEXT, end_date TEXT,
             status TEXT, type TEXT, role TEXT,
-            org TEXT, desc TEXT, tags TEXT, col TEXT,
+            org TEXT, "desc" TEXT, tags TEXT, col TEXT,
             sort_order INTEGER DEFAULT 0, proof TEXT
         );
 
         CREATE TABLE IF NOT EXISTS certifications (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             icon TEXT, issuer TEXT, name TEXT,
             start_date TEXT, end_date TEXT,
             status TEXT, link TEXT
         );
 
         CREATE TABLE IF NOT EXISTS achievements (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             icon TEXT, icon_bg TEXT,
             category TEXT, title TEXT,
-            desc TEXT, date TEXT, proof TEXT,
+            "desc" TEXT, date TEXT, proof TEXT,
             sort_order INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS soft_skills (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            icon TEXT, name TEXT, desc TEXT,
+            id SERIAL PRIMARY KEY,
+            icon TEXT, name TEXT, "desc" TEXT,
             sort_order INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS tech_skills (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT, color TEXT, grp TEXT,
             sort_order INTEGER DEFAULT 0
         );
     ''')
+    conn.commit()
+
+    # Add newer "about" columns if migrating from an older schema
+    for col in ['stat_projects_sub', 'stat_education_sub', 'stat_certs_sub', 'stat_internship_sub']:
+        c.execute(f'ALTER TABLE about ADD COLUMN IF NOT EXISTS {col} TEXT')
+    conn.commit()
 
     # Seed default data if tables are empty
-    if not c.execute('SELECT 1 FROM about').fetchone():
-        c.execute('''INSERT INTO about VALUES (1,
+    c.execute('SELECT 1 FROM about')
+    if not c.fetchone():
+        c.execute('''INSERT INTO about VALUES (1, %s, %s, %s, %s, %s, %s, %s)''', (
             "Kanishkaa S.",
             "B.Tech CSE · FinTech Honours · SRM Institute, Chennai · 2024–2028",
             "I build things that bridge data and decisions — from ML pipelines predicting air quality to full-stack security tools and graph algorithm visualizers. Currently pursuing Computer Science with a specialization in Financial Technology, blending code with real-world problem solving.",
@@ -89,35 +98,43 @@ def init_db():
             "https://github.com/kanishkaa-22",
             "https://linkedin.com/in/",
             "your@email.com"
-        )''')
+        ))
+        conn.commit()
 
-    if not c.execute('SELECT 1 FROM projects').fetchone():
+    c.execute('SELECT 1 FROM projects')
+    if not c.fetchone():
         projects = [
             ('Machine Learning','PM2.5 Air Quality Predictor','End-to-end ML pipeline on Beijing Multi-Site dataset. Random Forest achieved R²=0.93. Deployed as Streamlit app via Colab + ngrok.','Python,Scikit-learn,Random Forest,Streamlit,Pandas,ngrok','#60a5fa','Jan 2025','Mar 2025','https://github.com/kanishkaa-22/pm25-air-quality-prediction',None,1,0),
             ('Algorithms · Visualization','Smart City MST Optimizer',"Interactive graph tool visualizing Kruskal's and Prim's MST algorithms with canvas animation. Flask backend.",'Flask,Python,JavaScript,Canvas API','#34d399','2024','2025','https://github.com/',None,1,1),
             ('Security · Full-Stack','Phishing Awareness Simulator','Ethical phishing training platform. HMAC-signed tokens, SQLite logging, admin dashboard, Docker + Nginx, 30 pytest tests.','Flask,SQLite,HMAC,Docker,Nginx,pytest','#fb7185','2024','2025','https://github.com/',None,1,2),
             ('Web Application','Online Election Voting System','Flask/MySQL MVC app with secure voter auth and real-time results. Extended with mock online voting feature.','Flask,MySQL,MVC,Python','#a78bfa','2024','2025','https://github.com/',None,0,3),
         ]
-        c.executemany('INSERT INTO projects (cat,title,desc,chips,col,start_date,end_date,github,live,featured,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?)', projects)
+        c.executemany('INSERT INTO projects (cat,title,"desc",chips,col,start_date,end_date,github,live,featured,sort_order) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', projects)
+        conn.commit()
 
-    if not c.execute('SELECT 1 FROM experience').fetchone():
+    c.execute('SELECT 1 FROM experience')
+    if not c.fetchone():
         exps = [
             (2025,'Jan 2025','Mar 2025','completed','Virtual Programme','Data Analytics Virtual Experience','Quantium — via Forage','Completed all 3 tasks — customer analytics in R, uplift testing, and Pyramid Principles report.','R,ggplot2,Uplift Testing','#fbbf24',0),
             (2025,'Feb 2025','Present','ongoing','Academic Elective','Enterprise Cloud Engineering for InsurTech','Guidewire Technology Labs × SRM','Industry-partnered elective on cloud architecture for insurance tech platforms.','Cloud,Guidewire,InsurTech','#60a5fa',1),
             (2024,'Aug 2024','Present','ongoing','Honours Specialization','Financial Technology (FinTech)','SRM Institute of Science and Technology','Pursuing FinTech Honours — blockchain, digital payments, financial systems.','FinTech,Blockchain','#a78bfa',2),
             (2024,'Aug 2024','Present','ongoing','Education · Started','B.Tech Computer Science Engineering','SRM Institute of Science and Technology','Started undergraduate studies. Core: DSA, DBMS, OS, software engineering.','CSE,DBMS,DSA','#34d399',3),
         ]
-        c.executemany('INSERT INTO experience (year,start_date,end_date,status,type,role,org,desc,tags,col,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?)', exps)
+        c.executemany('INSERT INTO experience (year,start_date,end_date,status,type,role,org,"desc",tags,col,sort_order) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', exps)
+        conn.commit()
 
-    if not c.execute('SELECT 1 FROM certifications').fetchone():
+    c.execute('SELECT 1 FROM certifications')
+    if not c.fetchone():
         certs = [
             ('📊','Forage · Quantium','Data Analytics Virtual Experience Programme','Jan 2025','Mar 2025','completed','https://your-certificate-link.com'),
             ('☁️','Guidewire × SRM','Enterprise Cloud Engineering for Insurance Technology','Feb 2025','Present','inprogress',None),
             ('💳','SRM — Honours','Financial Technology (FinTech) Specialization','Aug 2024','2028','ongoing',None),
         ]
-        c.executemany('INSERT INTO certifications (icon,issuer,name,start_date,end_date,status,link) VALUES (?,?,?,?,?,?,?)', certs)
+        c.executemany('INSERT INTO certifications (icon,issuer,name,start_date,end_date,status,link) VALUES (%s,%s,%s,%s,%s,%s,%s)', certs)
+        conn.commit()
 
-    if not c.execute('SELECT 1 FROM achievements').fetchone():
+    c.execute('SELECT 1 FROM achievements')
+    if not c.fetchone():
         achs = [
             ('🏛️','rgba(167,139,250,.12)','Membership','IEEE Student Member','Active student member of the Institute of Electrical and Electronics Engineers','2024 – Present'),
             ('🎓','rgba(251,191,36,.12)','Academic','GPA 9.10 / 10','Maintained a strong academic record in B.Tech CSE at SRM Institute','2024 – Present'),
@@ -125,9 +142,11 @@ def init_db():
             ('⚡','rgba(96,165,250,.12)','Hackathon','Hackathon Participation','Participated in — add hackathon name and details','2025'),
             ('🛠️','rgba(52,211,153,.12)','Workshop','Workshop Participation','Attended — add workshop name and topic','2025'),
         ]
-        c.executemany('INSERT INTO achievements (icon,icon_bg,category,title,desc,date) VALUES (?,?,?,?,?,?)', achs)
+        c.executemany('INSERT INTO achievements (icon,icon_bg,category,title,"desc",date) VALUES (%s,%s,%s,%s,%s,%s)', achs)
+        conn.commit()
 
-    if not c.execute('SELECT 1 FROM soft_skills').fetchone():
+    c.execute('SELECT 1 FROM soft_skills')
+    if not c.fetchone():
         skills = [
             ('🧠','Problem Solving','Breaking complex problems into clear, logical steps',0),
             ('💬','Communication','Translating technical ideas into simple language',1),
@@ -138,9 +157,11 @@ def init_db():
             ('⚡','Fast Learning','Picking up new tools, frameworks and domains quickly',6),
             ('📊','Data Storytelling','Presenting findings clearly through visuals and reports',7),
         ]
-        c.executemany('INSERT INTO soft_skills (icon,name,desc,sort_order) VALUES (?,?,?,?)', skills)
+        c.executemany('INSERT INTO soft_skills (icon,name,"desc",sort_order) VALUES (%s,%s,%s,%s)', skills)
+        conn.commit()
 
-    if not c.execute('SELECT 1 FROM tech_skills').fetchone():
+    c.execute('SELECT 1 FROM tech_skills')
+    if not c.fetchone():
         tech = [
             ('Python','#3b82f6','Languages',0),('JavaScript','#f59e0b','Languages',1),
             ('R','#10b981','Languages',2),('SQL','#6366f1','Languages',3),
@@ -152,9 +173,9 @@ def init_db():
             ('MySQL','#34d399','Tools & Cloud',2),('Google Colab','#a78bfa','Tools & Cloud',3),
             ('Nginx','#facc15','Tools & Cloud',4),
         ]
-        c.executemany('INSERT INTO tech_skills (name,color,grp,sort_order) VALUES (?,?,?,?)', tech)
+        c.executemany('INSERT INTO tech_skills (name,color,grp,sort_order) VALUES (%s,%s,%s,%s)', tech)
+        conn.commit()
 
-    conn.commit()
     conn.close()
 
 # ── ROUTES ──────────────────────────────────
@@ -194,21 +215,34 @@ def admin_required(f):
 def get_all_data():
     conn = get_db()
     c = conn.cursor()
-    about = dict(c.execute('SELECT * FROM about WHERE id=1').fetchone())
+    c.execute('SELECT * FROM about WHERE id=1')
+    about = dict(c.fetchone())
     about['tags'] = about['tags'].split(',') if about['tags'] else []
-    # defaults for stat sub-texts if not set
     about.setdefault('stat_projects_sub', 'ML · Web · Cybersecurity · Algorithms')
     about.setdefault('stat_education_sub', 'B.Tech CSE · SRM 2024–28')
     about.setdefault('stat_certs_sub', 'Forage · Guidewire · SRM Honours')
     about.setdefault('stat_internship_sub', 'Available · 2026')
-    projects = [dict(r) for r in c.execute('SELECT * FROM projects ORDER BY sort_order').fetchall()]
+
+    c.execute('SELECT * FROM projects ORDER BY sort_order')
+    projects = [dict(r) for r in c.fetchall()]
     for p in projects: p['chips'] = p['chips'].split(',') if p['chips'] else []
-    experience = [dict(r) for r in c.execute('SELECT * FROM experience ORDER BY sort_order').fetchall()]
+
+    c.execute('SELECT * FROM experience ORDER BY sort_order')
+    experience = [dict(r) for r in c.fetchall()]
     for e in experience: e['tags'] = e['tags'].split(',') if e['tags'] else []
-    certifications = [dict(r) for r in c.execute('SELECT * FROM certifications').fetchall()]
-    achievements = [dict(r) for r in c.execute('SELECT * FROM achievements ORDER BY sort_order').fetchall()]
-    soft_skills = [dict(r) for r in c.execute('SELECT * FROM soft_skills ORDER BY sort_order').fetchall()]
-    tech_skills = [dict(r) for r in c.execute('SELECT * FROM tech_skills ORDER BY grp, sort_order').fetchall()]
+
+    c.execute('SELECT * FROM certifications')
+    certifications = [dict(r) for r in c.fetchall()]
+
+    c.execute('SELECT * FROM achievements ORDER BY sort_order')
+    achievements = [dict(r) for r in c.fetchall()]
+
+    c.execute('SELECT * FROM soft_skills ORDER BY sort_order')
+    soft_skills = [dict(r) for r in c.fetchall()]
+
+    c.execute('SELECT * FROM tech_skills ORDER BY grp, sort_order')
+    tech_skills = [dict(r) for r in c.fetchall()]
+
     conn.close()
     return jsonify({
         'about': about, 'projects': projects, 'experience': experience,
@@ -222,12 +256,9 @@ def get_all_data():
 def update_about():
     d = request.json
     conn = get_db()
-    # Add new columns if they don't exist yet
-    for col in ['stat_projects_sub','stat_education_sub','stat_certs_sub','stat_internship_sub']:
-        try: conn.execute(f'ALTER TABLE about ADD COLUMN {col} TEXT')
-        except: pass
-    conn.execute('''UPDATE about SET name=?,role=?,bio=?,tags=?,github=?,linkedin=?,email=?,
-        stat_projects_sub=?,stat_education_sub=?,stat_certs_sub=?,stat_internship_sub=? WHERE id=1''',
+    c = conn.cursor()
+    c.execute('''UPDATE about SET name=%s,role=%s,bio=%s,tags=%s,github=%s,linkedin=%s,email=%s,
+        stat_projects_sub=%s,stat_education_sub=%s,stat_certs_sub=%s,stat_internship_sub=%s WHERE id=1''',
         (d['name'],d['role'],d['bio'],','.join(d.get('tags',[])),d.get('github',''),d.get('linkedin',''),d.get('email',''),
          d.get('stat_projects_sub','ML · Web · Cybersecurity · Algorithms'),
          d.get('stat_education_sub','B.Tech CSE · SRM 2024–28'),
@@ -242,11 +273,13 @@ def update_about():
 def add_project():
     d = request.json
     conn = get_db()
-    cur = conn.execute('INSERT INTO projects (cat,title,desc,chips,col,start_date,end_date,github,live,featured,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    c = conn.cursor()
+    c.execute('INSERT INTO projects (cat,title,"desc",chips,col,start_date,end_date,github,live,featured,sort_order) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id',
         (d['cat'],d['title'],d['desc'],','.join(d.get('chips',[])),d.get('col','#a78bfa'),
          d.get('start',''),d.get('end',''),d.get('github','#'),d.get('live'),
          d.get('featured',0),d.get('sort_order',999)))
-    conn.commit(); new_id = cur.lastrowid; conn.close()
+    new_id = c.fetchone()['id']
+    conn.commit(); conn.close()
     return jsonify({'ok': True, 'id': new_id})
 
 @app.route('/api/projects/<int:pid>', methods=['PUT'])
@@ -254,7 +287,8 @@ def add_project():
 def update_project(pid):
     d = request.json
     conn = get_db()
-    conn.execute('UPDATE projects SET cat=?,title=?,desc=?,chips=?,col=?,start_date=?,end_date=?,github=?,live=?,featured=? WHERE id=?',
+    c = conn.cursor()
+    c.execute('UPDATE projects SET cat=%s,title=%s,"desc"=%s,chips=%s,col=%s,start_date=%s,end_date=%s,github=%s,live=%s,featured=%s WHERE id=%s',
         (d['cat'],d['title'],d['desc'],','.join(d.get('chips',[])),d.get('col','#a78bfa'),
          d.get('start',''),d.get('end',''),d.get('github','#'),d.get('live'),d.get('featured',0),pid))
     conn.commit(); conn.close()
@@ -264,7 +298,8 @@ def update_project(pid):
 @admin_required
 def delete_project(pid):
     conn = get_db()
-    conn.execute('DELETE FROM projects WHERE id=?', (pid,))
+    c = conn.cursor()
+    c.execute('DELETE FROM projects WHERE id=%s', (pid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
@@ -274,10 +309,12 @@ def delete_project(pid):
 def add_experience():
     d = request.json
     conn = get_db()
-    cur = conn.execute('INSERT INTO experience (year,start_date,end_date,status,type,role,org,desc,tags,col,proof) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    c = conn.cursor()
+    c.execute('INSERT INTO experience (year,start_date,end_date,status,type,role,org,"desc",tags,col,proof) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id',
         (d.get('year',2025),d.get('start',''),d.get('end',''),d.get('status','ongoing'),
          d.get('type',''),d['role'],d['org'],d.get('desc',''),','.join(d.get('tags',[])),d.get('col','#a78bfa'),d.get('proof')))
-    conn.commit(); new_id = cur.lastrowid; conn.close()
+    new_id = c.fetchone()['id']
+    conn.commit(); conn.close()
     return jsonify({'ok': True, 'id': new_id})
 
 @app.route('/api/experience/<int:eid>', methods=['PUT'])
@@ -285,7 +322,8 @@ def add_experience():
 def update_experience(eid):
     d = request.json
     conn = get_db()
-    conn.execute('UPDATE experience SET year=?,start_date=?,end_date=?,status=?,type=?,role=?,org=?,desc=?,tags=?,col=?,proof=? WHERE id=?',
+    c = conn.cursor()
+    c.execute('UPDATE experience SET year=%s,start_date=%s,end_date=%s,status=%s,type=%s,role=%s,org=%s,"desc"=%s,tags=%s,col=%s,proof=%s WHERE id=%s',
         (d.get('year',2025),d.get('start',''),d.get('end',''),d.get('status','ongoing'),
          d.get('type',''),d['role'],d['org'],d.get('desc',''),','.join(d.get('tags',[])),d.get('col','#a78bfa'),d.get('proof'),eid))
     conn.commit(); conn.close()
@@ -295,7 +333,8 @@ def update_experience(eid):
 @admin_required
 def delete_experience(eid):
     conn = get_db()
-    conn.execute('DELETE FROM experience WHERE id=?', (eid,))
+    c = conn.cursor()
+    c.execute('DELETE FROM experience WHERE id=%s', (eid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
@@ -305,9 +344,11 @@ def delete_experience(eid):
 def add_cert():
     d = request.json
     conn = get_db()
-    cur = conn.execute('INSERT INTO certifications (icon,issuer,name,start_date,end_date,status,link) VALUES (?,?,?,?,?,?,?)',
+    c = conn.cursor()
+    c.execute('INSERT INTO certifications (icon,issuer,name,start_date,end_date,status,link) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id',
         (d.get('icon','📜'),d['issuer'],d['name'],d.get('start',''),d.get('end',''),d.get('status','inprogress'),d.get('link')))
-    conn.commit(); new_id = cur.lastrowid; conn.close()
+    new_id = c.fetchone()['id']
+    conn.commit(); conn.close()
     return jsonify({'ok': True, 'id': new_id})
 
 @app.route('/api/certifications/<int:cid>', methods=['PUT'])
@@ -315,7 +356,8 @@ def add_cert():
 def update_cert(cid):
     d = request.json
     conn = get_db()
-    conn.execute('UPDATE certifications SET icon=?,issuer=?,name=?,start_date=?,end_date=?,status=?,link=? WHERE id=?',
+    c = conn.cursor()
+    c.execute('UPDATE certifications SET icon=%s,issuer=%s,name=%s,start_date=%s,end_date=%s,status=%s,link=%s WHERE id=%s',
         (d.get('icon','📜'),d['issuer'],d['name'],d.get('start',''),d.get('end',''),d.get('status','inprogress'),d.get('link'),cid))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
@@ -324,7 +366,8 @@ def update_cert(cid):
 @admin_required
 def delete_cert(cid):
     conn = get_db()
-    conn.execute('DELETE FROM certifications WHERE id=?', (cid,))
+    c = conn.cursor()
+    c.execute('DELETE FROM certifications WHERE id=%s', (cid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
@@ -334,10 +377,13 @@ def delete_cert(cid):
 def add_achievement():
     d = request.json
     conn = get_db()
-    max_order = conn.execute('SELECT COALESCE(MAX(sort_order),-1) FROM achievements').fetchone()[0]
-    cur = conn.execute('INSERT INTO achievements (icon,icon_bg,category,title,desc,date,proof,sort_order) VALUES (?,?,?,?,?,?,?,?)',
+    c = conn.cursor()
+    c.execute('SELECT COALESCE(MAX(sort_order),-1) AS m FROM achievements')
+    max_order = c.fetchone()['m']
+    c.execute('INSERT INTO achievements (icon,icon_bg,category,title,"desc",date,proof,sort_order) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id',
         (d.get('icon','🏆'),d.get('icon_bg','rgba(167,139,250,.12)'),d.get('category',''),d['title'],d.get('desc',''),d.get('date',''),d.get('proof'),d.get('sort_order', max_order+1)))
-    conn.commit(); new_id = cur.lastrowid; conn.close()
+    new_id = c.fetchone()['id']
+    conn.commit(); conn.close()
     return jsonify({'ok': True, 'id': new_id})
 
 @app.route('/api/achievements/<int:aid>', methods=['PUT'])
@@ -345,11 +391,12 @@ def add_achievement():
 def update_achievement(aid):
     d = request.json
     conn = get_db()
+    c = conn.cursor()
     if 'sort_order' in d:
-        conn.execute('UPDATE achievements SET icon=?,icon_bg=?,category=?,title=?,desc=?,date=?,proof=?,sort_order=? WHERE id=?',
+        c.execute('UPDATE achievements SET icon=%s,icon_bg=%s,category=%s,title=%s,"desc"=%s,date=%s,proof=%s,sort_order=%s WHERE id=%s',
             (d.get('icon','🏆'),d.get('icon_bg','rgba(167,139,250,.12)'),d.get('category',''),d['title'],d.get('desc',''),d.get('date',''),d.get('proof'),d.get('sort_order'),aid))
     else:
-        conn.execute('UPDATE achievements SET icon=?,icon_bg=?,category=?,title=?,desc=?,date=?,proof=? WHERE id=?',
+        c.execute('UPDATE achievements SET icon=%s,icon_bg=%s,category=%s,title=%s,"desc"=%s,date=%s,proof=%s WHERE id=%s',
             (d.get('icon','🏆'),d.get('icon_bg','rgba(167,139,250,.12)'),d.get('category',''),d['title'],d.get('desc',''),d.get('date',''),d.get('proof'),aid))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
@@ -361,8 +408,9 @@ def reorder_achievements():
     d = request.json
     order = d.get('order', [])
     conn = get_db()
+    c = conn.cursor()
     for idx, aid in enumerate(order):
-        conn.execute('UPDATE achievements SET sort_order=? WHERE id=?', (idx, aid))
+        c.execute('UPDATE achievements SET sort_order=%s WHERE id=%s', (idx, aid))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
@@ -370,7 +418,8 @@ def reorder_achievements():
 @admin_required
 def delete_achievement(aid):
     conn = get_db()
-    conn.execute('DELETE FROM achievements WHERE id=?', (aid,))
+    c = conn.cursor()
+    c.execute('DELETE FROM achievements WHERE id=%s', (aid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
@@ -380,16 +429,19 @@ def delete_achievement(aid):
 def add_soft_skill():
     d = request.json
     conn = get_db()
-    cur = conn.execute('INSERT INTO soft_skills (icon,name,desc,sort_order) VALUES (?,?,?,?)',
+    c = conn.cursor()
+    c.execute('INSERT INTO soft_skills (icon,name,"desc",sort_order) VALUES (%s,%s,%s,%s) RETURNING id',
         (d.get('icon','🌟'),d['name'],d.get('desc',''),d.get('sort_order',999)))
-    conn.commit(); new_id = cur.lastrowid; conn.close()
+    new_id = c.fetchone()['id']
+    conn.commit(); conn.close()
     return jsonify({'ok': True, 'id': new_id})
 
 @app.route('/api/soft-skills/<int:sid>', methods=['DELETE'])
 @admin_required
 def delete_soft_skill(sid):
     conn = get_db()
-    conn.execute('DELETE FROM soft_skills WHERE id=?', (sid,))
+    c = conn.cursor()
+    c.execute('DELETE FROM soft_skills WHERE id=%s', (sid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
@@ -399,23 +451,24 @@ def delete_soft_skill(sid):
 def add_tech_skill():
     d = request.json
     conn = get_db()
-    cur = conn.execute('INSERT INTO tech_skills (name,color,grp,sort_order) VALUES (?,?,?,?)',
+    c = conn.cursor()
+    c.execute('INSERT INTO tech_skills (name,color,grp,sort_order) VALUES (%s,%s,%s,%s) RETURNING id',
         (d['name'],d.get('color','#a78bfa'),d.get('grp','Languages'),d.get('sort_order',999)))
-    conn.commit(); new_id = cur.lastrowid; conn.close()
+    new_id = c.fetchone()['id']
+    conn.commit(); conn.close()
     return jsonify({'ok': True, 'id': new_id})
 
 @app.route('/api/tech-skills/<int:tid>', methods=['DELETE'])
 @admin_required
 def delete_tech_skill_api(tid):
     conn = get_db()
-    conn.execute('DELETE FROM tech_skills WHERE id=?', (tid,))
+    c = conn.cursor()
+    c.execute('DELETE FROM tech_skills WHERE id=%s', (tid,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 
 # ── RUN ─────────────────────────────────────
-if __name__ == '__main__':
-    init_db()
-    app.run(debug=True)
-
-# For Render / production
 init_db()
+
+if __name__ == '__main__':
+    app.run(debug=True)

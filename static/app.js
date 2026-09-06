@@ -86,8 +86,27 @@ async function loadPortfolioData() {
   renderAchievements(data.achievements);
   updateHomeStats();
   triggerNameAnim();
+  const homeGrid = document.querySelector('.home-grid');
+  if (homeGrid) homeGrid.classList.add('content-loaded');
+  hideLoadingSpinner();
   setTimeout(observeFades, 100);
   setTimeout(observeCounters, 150);
+}
+
+/* ── LOADING SPINNER (shown during initial data fetch) ── */
+function showLoadingSpinner() {
+  if (document.getElementById('pageLoadingSpinner')) return;
+  const spinner = document.createElement('div');
+  spinner.id = 'pageLoadingSpinner';
+  spinner.className = 'page-loading-spinner';
+  spinner.innerHTML = '<div class="pls-ring"></div>';
+  document.body.appendChild(spinner);
+}
+function hideLoadingSpinner() {
+  const spinner = document.getElementById('pageLoadingSpinner');
+  if (!spinner) return;
+  spinner.classList.add('pls-hide');
+  setTimeout(() => spinner.remove(), 400);
 }
 
 /* ── RENDER ABOUT ── */
@@ -242,7 +261,7 @@ function renderProjects(projects) {
       <div class="proj-row-card fade-in" data-proj-id="${p.id}" onclick="openCard(${p.id})">
         <div class="prc-left"><span class="prc-num">${String(i+1).padStart(2,'0')}</span><span class="prc-dot" style="background:${p.col}"></span></div>
         <div class="prc-body"><div class="prc-cat" style="color:${p.col}">${p.cat}</div><div class="prc-title">${p.title}</div><div class="prc-chips">${p.chips.slice(0,3).map(c=>`<span>${c}</span>`).join('')}</div></div>
-        <div class="prc-btns"><button class="prc-edit admin-only" onclick="event.stopPropagation();openEditProject(${p.id})">✎</button><span class="prc-arr">→</span></div>
+        <div class="prc-btns"><button class="prc-edit admin-only" onclick="event.stopPropagation();openEditProject(${p.id})">✎</button><button class="prc-del admin-only" onclick="event.stopPropagation();deleteProject(${p.id})">✕</button><span class="prc-arr">→</span></div>
       </div>`).join('') + `
       <div class="proj-add-btn admin-only" onclick="openAddProject()">
         <span class="proj-add-icon">＋</span><span class="proj-add-label">Add Project</span>
@@ -279,7 +298,10 @@ function renderExperience(exps) {
         <div class="vtl-desc">${d.desc}</div>
         <div class="vtl-tags">${d.tags.map(t=>`<span class="vtl-tag">${t}</span>`).join('')}</div>
         ${d.proof ? `<div class="ach-proof-wrap"><button class="ach-proof-btn" onclick="viewProof('${d.proof}')">View Certificate ↗</button></div>` : ''}
-        <button class="vtl-edit-btn admin-only" onclick="openEditExp(${d.id})">✎ Edit</button>
+        <div class="vtl-edit-controls admin-only">
+          <button class="vtl-edit-btn" onclick="openEditExp(${d.id})">✎ Edit</button>
+          <button class="vtl-del-btn" onclick="deleteExp(${d.id})">✕ Delete</button>
+        </div>
       </div>`;
     container.appendChild(item);
   });
@@ -674,6 +696,12 @@ function openEditProject(id){
   });
 }
 
+async function deleteProject(id){
+  if(!confirm('Delete this project?'))return;
+  await fetch(`/api/projects/${id}`,{method:'DELETE'});
+  await reloadSection('projects');
+}
+
 /* if 3 projects are already featured, un-feature the oldest one (lowest sort_order) so the new one fits */
 async function enforceFeaturedLimit(excludeId){
   const featured = projData.filter(p => p.featured && p.id !== excludeId);
@@ -683,7 +711,7 @@ async function enforceFeaturedLimit(excludeId){
 }
 
 /* ════════════════════════════════════════
-   EXPERIENCE — ADD / EDIT
+   EXPERIENCE — ADD / EDIT / DELETE
    ════════════════════════════════════════ */
 function expFormHTML(d){
   return`
@@ -727,6 +755,12 @@ function openEditExp(id){
     const res=await fetch(`/api/experience/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     if((await res.json()).ok){await reloadSection('experience');closeSharedDialog();}
   });
+}
+
+async function deleteExp(id){
+  if(!confirm('Delete this experience entry?'))return;
+  await fetch(`/api/experience/${id}`,{method:'DELETE'});
+  await reloadSection('experience');
 }
 
 /* ════════════════════════════════════════
@@ -914,6 +948,7 @@ document.head.appendChild(fadeStyle);
 
 /* ── INIT ── */
 window.addEventListener('DOMContentLoaded', () => {
+  showLoadingSpinner();
   loadPortfolioData();
   updateFooter('home');
 });

@@ -8,4 +8,6 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: ADMIN_PASS
-        value: kanishkaa@2024
+        sync: false
+      - key: DATABASE_URL
+        sync: false
