@@ -246,7 +246,7 @@ footer{
 
 /* ── PHOTO CARD ─────────────────────── */
 .photo-card{
-  aspect-ratio:3/4;
+  aspect-ratio:4/5;
   display:flex;align-items:center;justify-content:center;
   position:relative;
   background:transparent;
