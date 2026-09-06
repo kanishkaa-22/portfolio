@@ -11,6 +11,7 @@ import os
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', '')
+app.secret_key = os.environ.get('SECRET_KEY', '')
 
 ADMIN_PASS = os.environ.get('ADMIN_PASS', '12345')
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
